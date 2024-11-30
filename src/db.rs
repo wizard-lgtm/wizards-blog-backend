@@ -29,15 +29,14 @@ pub async fn db_connect(uri: String) -> Database{
 }
 
 
-
-struct NoteService {
+pub struct NoteService {
     collection: Collection<Note>,
 }
 impl NoteService {
-    pub async fn new(uri: &str, db_name: &str, collection_name: &str) -> MongoResult<Self> {
-        let client_options = ClientOptions::parse(uri).await?;
-        let client = Client::with_options(client_options)?;
-        let collection = client.database(db_name).collection(collection_name);
+    pub async fn new(db: &Database) -> MongoResult<Self> {
+        
+        let collection_name = "notes";
+        let collection =db.collection(&collection_name); 
         Ok(Self { collection })
     }
 
