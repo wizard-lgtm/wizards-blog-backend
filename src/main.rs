@@ -1,11 +1,18 @@
-use actix_web::{get, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use mongodb::Database;
+use routes::notes::configure;
 use serde::Serialize;
 use dotenv::dotenv;
 use std::env;
 mod db;
 mod types;
+mod routes;
+use crate::routes::notes;
 
+// Struct for the app state that will hold the database connection.
+pub struct AppState {
+    db: Database,
+}
 
 #[derive(Serialize)]
 struct HomeResponse{
@@ -13,7 +20,7 @@ struct HomeResponse{
 }
 
 #[get("/")]
-async fn home() -> impl Responder{
+async fn home(state: web::Data<AppState>) -> impl Responder{
     let response = HomeResponse{message:String::from("Hello world!")};
     HttpResponse::Ok().json(response)
 }
@@ -34,11 +41,18 @@ async fn main() -> std::io::Result<()> {
     let db: Database = db::db_connect(mongodb_uri).await;
 
     println!("Connected to database: {}", db.name());
+
+    // Create the AppState with the database connection.
+    let app_state = web::Data::new(AppState { db });
+
     println!("Server starting on port: {}", port);
 
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         App::new()
+            .app_data(app_state.clone())
             .service(home)
+            .configure(notes::configure)
+            
     })
     .bind(("127.0.0.1", port))?
     .run()
