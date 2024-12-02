@@ -1,9 +1,10 @@
 use mongodb::{bson, Collection};
 use mongodb::{self, Client, Database};
+use serde_json::json;
 use std::env;
-use mongodb::bson::{doc, Bson, Uuid};
-use mongodb::error::Result as MongoResult;
-use mongodb::options::ClientOptions;
+use mongodb::bson::{doc, Bson, Document, Uuid};
+use mongodb::error::{Error, Result as MongoResult};
+use mongodb::options::{ClientOptions, FindOptions};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::types::{Note, Tags};
@@ -29,6 +30,8 @@ pub async fn db_connect(uri: String) -> Database{
 }
 
 
+
+
 pub struct NoteService {
     collection: Collection<Note>,
 }
@@ -45,7 +48,7 @@ impl NoteService {
         let note = Note {
             id: Uuid::new(),
             title,
-            content,
+            content: Some(content),
             created_at: now,
             updated_at: now,
             tags,
@@ -54,13 +57,24 @@ impl NoteService {
         self.collection.insert_one(note).await?;
         Ok(_id)
     }
-
     pub async fn delete_note(&self, id: Uuid) -> MongoResult<()> {
-        self.collection.delete_one(doc! { "id": id }).await?;
+        let note = self.find_note_by_id(id).await?;
+
+        if note.is_none() {
+            return Err(Error::custom(json!({"meesage": "Resource not found"})));
+        }
+
+        let result = self.collection.delete_one(doc! { "id": id }).await?;
+
+        if result.deleted_count == 0 {
+            return Err(Error::custom({"Failed to delete resource"}));
+        }
+
         Ok(())
     }
 
-    pub async fn update_note(
+
+       pub async fn update_note(
         &self,
         id: Uuid,
         new_title: Option<String>,
@@ -104,4 +118,37 @@ impl NoteService {
         }
         Ok(notes)
     }
+    pub async fn get_note_by_title(&self, title: String)->MongoResult<Option<Note>>{
+            let filter = doc! {"title": title};
+            let result = self.collection.find_one(filter).await?;
+            
+            Ok(result)
+    }
+    pub async fn get_all_notes_by_page(&self, page: usize) -> MongoResult<Vec<Note>> {
+        if page == 0 {
+            return MongoResult::Err(Error::custom(
+                "Page number must be greater than 0".to_string(),
+            ));
+        }
+
+        let page_size = 10;
+        let skip = (page - 1) * page_size; // Skip for pagination
+        let filter = doc! {}; // No filter for fetching all notes
+        
+        let mut cursor = self.collection.find(filter)
+            .skip(skip as u64)
+            .limit(page_size as i64)
+            .projection(doc! { "content": 0 }) // Exclude the `content` field
+        .await?;
+        let mut notes = Vec::new();
+
+        while cursor.advance().await? {
+            let note: Note = cursor.deserialize_current()?;
+            notes.push(note);
+        }
+
+        Ok(notes)
+    }
+
+    
 }
